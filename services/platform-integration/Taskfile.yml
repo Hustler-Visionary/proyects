@@ -20,7 +20,7 @@ tasks:
     deps: [build]
     cmds:
       - pnpm exec turbo prune {{.PKG}} --docker --out-dir=.turbo-prune/platform-integration
-      - docker build -f Dockerfile -t {{.PKG}}:local ../.. --build-arg PACKAGE_DIR=infra/platform-integration
+      - docker build -f Dockerfile -t {{.PKG}}:local ../.. --build-arg PACKAGE_DIR=services/platform-integration
 
   docker:push:
     desc: Push this package's image (tag comes from package.json version)

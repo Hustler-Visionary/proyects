@@ -17,6 +17,6 @@ RUN pnpm exec turbo run build --filter=@tst-autonomous/platform-integration
 
 FROM node:20-slim AS runner
 WORKDIR /app
-COPY --from=builder /app/infra/platform-integration/dist ./dist
-COPY --from=builder /app/infra/platform-integration/package.json ./package.json
+COPY --from=builder /app/services/platform-integration/dist ./dist
+COPY --from=builder /app/services/platform-integration/package.json ./package.json
 CMD ["node", "dist/index.js"]

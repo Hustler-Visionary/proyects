@@ -895,3 +895,31 @@ Se agrega Unified Runtime Kernel y External Integration con estrategia disabled-
 - Réplica de solo lectura / pooler externo (PgBouncer) para más de una instancia de `apps/api` — hoy un pool por proceso, adecuado para un solo réplica.
 - `drizzle-zod` no se adoptó todavía: encajaría bien con la filosofía "Zod en todo el proyecto" (deriva schemas Zod directo de las tablas), pero los DTOs de entrada actuales (`createUserSchema` con `password`, no `passwordHash`; `updateTaskSchema` parcial) no mapean 1:1 a las columnas sin `.omit()`/`.extend()` — quedó como refinamiento futuro, no como deuda bloqueante.
 - Backups / point-in-time recovery del Postgres local (fuera de alcance para infra de desarrollo, ver `infra/docker/README.md`).
+
+## Fase 27.6: DDD Bounded-Context Split (documentación retroactiva) + Context Map
+
+**Nota de lectura:** desde esta fase, `src/domain/` **ya no existe**. Todas las fases anteriores (Fase 1 a Fase 27.5) describen ese layout tal como era en su momento — quedan como registro histórico, no como mapa del código actual. Para la estructura vigente, ver `context-map/README.md`.
+
+### Qué existe realmente
+- El commit `57a6941` ("Split src/domain into DDD bounded-context packages") reestructuró todo el proyecto de un único programa TypeScript plano a un monorepo pnpm + TypeScript project references con 5 niveles de responsabilidad — pero **nunca se documentó como fase** hasta ahora. Esta entrada cierra ese hueco retroactivamente:
+  - `packages/kernel`: primitivas compartidas (trace bus) — lo único de lo que todo puede depender.
+  - `services/{governance-compliance,repo-knowledge,agent-cognition,product-narrative,macro-apps}`: los bounded contexts de negocio, cada uno con su propio `package.json`/`tsconfig.json` (project references composite).
+  - `execution/{graph-orchestration,runtime-fabric}`: los motores de orquestación/ejecución, separados de `services/` porque coordinan *cómo* se ejecuta el trabajo entre servicios, no reglas de un dominio de negocio puntual.
+  - `apps/web`: el visualizador REPO_OS, movido tal cual pero recableado para importar todo a través del `index.ts` público de cada paquete (`workspace:*` + pnpm) en vez de rutas relativas a `../../src/...`.
+  - Cada paquete restringe sus `exports` a su propio `index.ts`: un import profundo a un archivo interno de otro paquete es un error de resolución real, no solo una convención.
+  - Se agregó Turborepo (`turbo.json`) para el pipeline build/test/docker, y un `Dockerfile` (patrón turbo-prune) + `Taskfile.yml` por paquete.
+- **Corrección de esta sesión**: `infra/platform-integration` se reclasificó a `services/platform-integration`. El commit original lo describió como "adapters de plataforma/integración, sin lógica de negocio", pero el contenido real (`mcp-fabric`, `external-integration`, `reality-bridge`, `saas-control-plane`, `stack-definition` — todos pares `engine.ts`/`types.ts`, cero contenido de despliegue) es lógica de negocio igual que cualquier otro paquete en `services/`. Detalle completo, con la evidencia verificada, en `context-map/decisions-log.md`.
+- **Nuevo**: directorio `context-map/` en la raíz del repo — mapa de responsabilidades navegable, con la jerarquía de 5 niveles explicada primero en lenguaje llano (analogía de edificio de oficinas) y después en detalle técnico (tablas, árbol ASCII, diagrama de dependencias), más un glosario sin jerga y el log de decisiones de reclasificación.
+
+### Qué es mock/simulado
+- Nada de esta fase es mock — es reorganización y documentación de estructura real, verificada con build+test reales (ver Validación).
+
+### Qué falta
+- `apps/api` no depende hoy de ningún paquete del monorepo (ni `packages/kernel` ni `services/governance-compliance`) — conectarlo a la gobernanza real de `services/governance-compliance` (más allá del CASL/RBAC propio que ya tiene) sigue pendiente; documentado explícitamente en `context-map/README.md` para no asumirlo hecho.
+- `services/product-narrative` y `services/macro-apps` tienen alcance más amplio o menos preciso que su nombre sugiere — anotado como observación en `context-map/decisions-log.md`, no resuelto en esta pasada por no haber una inconsistencia tan clara como la de `platform-integration`.
+- `infra/k8s/` (manifiestos de Kubernetes) todavía no existe — `infra/docker/` sigue siendo Docker Compose puro; la disciplina de nombrar `data/<servicio>/` igual que el servicio ya está pensada para ese día.
+
+### Validación
+- Antes de mover nada: `grep` de imports relativos cruzando límites de paquete (`../../../`) en todo `apps/*/src`, `services/*/src`, `execution/*/src` → cero resultados (confirma que el movimiento es puramente mecánico).
+- Inventario exacto de qué archivos referenciaban el path viejo como string literal (4 en total: `tsconfig.json` raíz, `Taskfile.yml`/`Dockerfile` propios del paquete, `scripts/scaffold-package.mjs`) — todos actualizados.
+- `pnpm install` (relockea con el nuevo path) + `pnpm exec turbo run build test` sobre el monorepo completo → **21/21 tareas exitosas**, incluidos los 13 tests propios de `platform-integration` corriendo desde su nueva ubicación.

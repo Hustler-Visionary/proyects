@@ -10,7 +10,7 @@ const REGISTRY = {
   "agent-cognition": "services/agent-cognition",
   "product-narrative": "services/product-narrative",
   "macro-apps": "services/macro-apps",
-  "platform-integration": "infra/platform-integration",
+  "platform-integration": "services/platform-integration",
   "graph-orchestration": "execution/graph-orchestration",
   "runtime-fabric": "execution/runtime-fabric"
 };

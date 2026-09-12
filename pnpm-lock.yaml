@@ -231,15 +231,6 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
-  infra/platform-integration:
-    devDependencies:
-      '@types/node':
-        specifier: ^22.9.0
-        version: 22.20.1
-      typescript:
-        specifier: ^5.6.3
-        version: 5.9.3
-
   packages/kernel:
     devDependencies:
       '@types/node':
@@ -295,6 +286,15 @@ importers:
       '@tst-autonomous/repo-knowledge':
         specifier: workspace:*
         version: link:../repo-knowledge
+    devDependencies:
+      '@types/node':
+        specifier: ^22.9.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
+  services/platform-integration:
     devDependencies:
       '@types/node':
         specifier: ^22.9.0
