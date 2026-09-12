@@ -1,147 +1,169 @@
 # Context Map — TST Autonomous / REPO_OS
 
-_Mapa de responsabilidades del monorepo: qué es cada carpeta, quién depende de quién, y por qué está organizado así. Pensado para leerse sin conocer el código de antemano — sea o no seas quien lo programa._
-
-> Si solo vas a leer una sección, que sea la 2 ("Los 5 niveles"). Todo lo demás es detalle de esa idea.
-
----
-
-## 1. La idea en una frase
-
-Este repositorio junta **una plataforma completa** (backend, frontend, motores de orquestación, reglas de negocio, y la infraestructura que los corre) en un solo lugar, pero cada pieza vive en un nivel claro según **qué responsabilidad tiene**, no según cuándo se escribió o quién la tocó.
-
-Una analogía: pensá en un edificio de oficinas.
-
-| Nivel del edificio | Nivel de este repo | Qué hace |
-|---|---|---|
-| 🏗️ Cuarto de máquinas (sótano) | `infra/` | Enciende las luces, el agua, la electricidad. No sabe qué negocio funciona arriba. |
-| 🏢 Recepción / mostradores al público | `apps/` | Por acá entra la gente (usuarios, otros sistemas). Cada mostrador tiene su propia puerta (puerto de red). |
-| 🧭 Oficina de coordinación | `execution/` | No atiende al público directamente; decide cómo se reparte y ejecuta el trabajo entre departamentos. |
-| 🗂️ Departamentos (legal, finanzas, soporte...) | `services/` | Cada uno sabe las reglas de su propia área. No le importa cómo llegó el pedido. |
-| 🧰 Caja de herramientas compartida | `packages/` | Lo mínimo que todos los departamentos usan (una regla, un formulario común). No depende de nadie. |
-
-Esa tabla **es** la arquitectura. Todo lo de abajo es la versión técnica de la misma idea.
+**Documento:** Mapa de responsabilidades arquitectónicas del monorepo.
+**Alcance:** Todos los directorios de primer nivel del repositorio (`infra/`, `apps/`, `execution/`, `services/`, `packages/`).
+**Propósito:** Establecer, de forma verificable y sin ambigüedad, a qué nivel arquitectónico pertenece cada unidad de código, qué responsabilidad tiene ese nivel, y qué regla de dependencia rige entre niveles.
+**Audiencia:** Ingeniería (referencia técnica autoritativa) y stakeholders no técnicos (sección 1, resumen ejecutivo).
 
 ---
 
-## 2. Los 5 niveles (versión técnica)
+## 1. Resumen ejecutivo
 
-```
-                    ┌───────────────────────────────────────────────┐
-                    │  NIVEL 0 · ORQUESTACIÓN — infra/               │
-                    │  Construye, despliega y conecta. Cero reglas   │
-                    │  de negocio. Hoy: Docker Compose. Mañana:      │
-                    │  también manifiestos de Kubernetes, acá mismo. │
-                    └───────────────────────┬─────────────────────────┘
-                                            │ construye y corre
-                                            ▼
-        ┌─────────────────────────────────────────────────────────────────┐
-        │  NIVEL 1 · APLICACIONES DESPLEGABLES — apps/                    │
-        │  Procesos independientes, cada uno con su propio puerto de red. │
-        │  apps/api  (NestJS · GraphQL · puerto 4000)                     │
-        │  apps/web  (Next.js · REPO_OS · puerto 3000)                    │
-        └───────────────┬───────────────────────────────┬─────────────────┘
-                        │                               │ usa
-                        │ (sin consumir services aún)   ▼
-                        │              ┌─────────────────────────────────────┐
-                        │              │  NIVEL 2 · ORQUESTACIÓN DE EJECUCIÓN  │
-                        │              │  — execution/                        │
-                        │              │  Coordina/simula cómo fluye el       │
-                        │              │  trabajo. Nadie de afuera le habla   │
-                        │              │  directo.                            │
-                        │              │  graph-orchestration · runtime-fabric│
-                        │              └───────────────────┬───────────────────┘
-                        │                                  │ usa
-                        ▼                                  ▼
-        ┌───────────────────────────────────────────────────────────────────┐
-        │  NIVEL 3 · SERVICIOS DE DOMINIO — services/                        │
-        │  Cada uno es un "departamento": reglas de negocio de un área,      │
-        │  sin saber cómo llegó el pedido ni quién lo va a mostrar.          │
-        │  governance-compliance · repo-knowledge · agent-cognition ·        │
-        │  product-narrative · macro-apps · platform-integration            │
-        └───────────────────────────────────┬─────────────────────────────────┘
-                                            │ usa
-                                            ▼
-                        ┌─────────────────────────────────────┐
-                        │  NIVEL 4 · KERNEL COMPARTIDO           │
-                        │  — packages/                           │
-                        │  Lo único de lo que todo puede depender│
-                        │  packages/kernel (trace bus)            │
-                        │  No depende de nada más del repo.      │
-                        └─────────────────────────────────────┘
-```
+Este repositorio aloja una plataforma completa — interfaz de usuario, backend, motores de orquestación, reglas de negocio e infraestructura de despliegue — organizada en **cinco niveles de responsabilidad**. Cada nivel tiene un criterio de pertenencia único y verificable: un directorio pertenece a un nivel si y solo si cumple ese criterio, no por convención ni por dónde "parece" que debería estar.
 
-**La única regla que importa:** las flechas de dependencia solo apuntan hacia abajo. `apps/` puede usar `execution/` y `services/`; `execution/` puede usar `services/`; todos pueden usar `packages/`. Nunca al revés — `packages/kernel` no sabe que `apps/api` existe, y no debería. Esto es lo que en arquitectura se llama la **regla de dependencia** (hexagonal / clean architecture): lo genérico no depende de lo específico.
+| Nivel | Directorio | Responsabilidad | Puede ser modificado sin afectar | No puede depender de |
+|---|---|---|---|---|
+| 0 — Orquestación | `infra/` | Construcción, despliegue y conectividad de red de los procesos ejecutables | Ninguna lógica de negocio | (no aplica — no importa código fuente de ningún nivel) |
+| 1 — Aplicaciones | `apps/` | Procesos ejecutables independientes, cada uno expuesto en un puerto de red propio | Otras aplicaciones | Nada — es el nivel más externo |
+| 2 — Orquestación de ejecución | `execution/` | Coordinación de cómo se secuencia y enruta el trabajo entre servicios de dominio | Aplicaciones que lo consumen | `apps/` |
+| 3 — Servicios de dominio | `services/` | Reglas de negocio de un contexto delimitado, sin conocimiento de quién las invoca | `execution/`, `apps/` | `execution/`, `apps/` |
+| 4 — Núcleo compartido | `packages/` | Primitivas de las que cualquier otro nivel puede depender | Todo lo anterior | Cualquier otro nivel |
 
-`infra/` está **fuera** de esa cadena por completo: no importa código de ningún nivel, solo sabe construir imágenes y exponer puertos.
+**Principio arquitectónico único que gobierna esta tabla (regla de dependencia):** una dependencia de código fuente solo puede apuntar de un nivel numéricamente menor hacia uno numéricamente mayor (por ejemplo, `apps/` → `services/` es válido; `packages/` → `apps/` no lo es, bajo ninguna circunstancia). El nivel 0 (`infra/`) queda fuera de esta regla porque no participa del grafo de dependencias de código: no importa ningún paquete, solo produce y conecta artefactos ya compilados (imágenes de contenedor).
+
+Esta regla es la base de la separación de responsabilidades: el nivel más genérico (`packages/`) nunca puede quedar acoplado a una decisión específica de una aplicación puntual.
 
 ---
 
-## 3. El árbol real (solo lo que importa para este mapa)
+## 2. Criterios de clasificación por nivel
+
+Cada nivel se define por un criterio de inclusión y uno de exclusión, no por descripción general. Esto es lo que elimina la ambigüedad de "a qué nivel pertenece esto": se aplica el criterio, no el juicio subjetivo.
+
+### Nivel 0 — Orquestación (`infra/`)
+
+- **Criterio de inclusión:** el directorio define cómo se construye, despliega, conecta en red o persiste un artefacto ya compilado (manifiestos de Docker Compose, futuros manifiestos de Kubernetes, definiciones de volúmenes).
+- **Criterio de exclusión:** si el directorio contiene una sola línea de regla de negocio (validación de dominio, cálculo, política de autorización), no pertenece a este nivel, sin excepción.
+- **Estado actual:** `infra/docker/` (Docker Compose para Postgres local). No existe todavía un directorio de manifiestos de Kubernetes.
+
+### Nivel 1 — Aplicaciones (`apps/`)
+
+- **Criterio de inclusión:** el directorio produce un proceso ejecutable independiente, con su propio punto de entrada (`main.ts`, `next start`, etc.) y su propio puerto de red.
+- **Criterio de exclusión:** una librería que no se ejecuta por sí sola, sino que es importada por otro paquete, no pertenece a este nivel aunque tenga lógica compleja.
+- **Estado actual:** `apps/api` (backend NestJS, puerto 4000), `apps/web` (frontend Next.js, puerto 3000).
+
+### Nivel 2 — Orquestación de ejecución (`execution/`)
+
+- **Criterio de inclusión:** el directorio coordina la secuencia, el enrutamiento o la simulación de ejecución de trabajo *entre* servicios de dominio, sin poseer reglas de negocio de un dominio específico.
+- **Criterio de exclusión:** si el directorio modela las reglas propias de un área de negocio (por ejemplo, qué constituye una política aprobada), pertenece a `services/`, no a este nivel, independientemente de cuán "central" parezca su función.
+- **Estado actual:** `execution/graph-orchestration` (enrutamiento tipo Markov), `execution/runtime-fabric` (simulación de ejecución en runtime).
+
+### Nivel 3 — Servicios de dominio (`services/`)
+
+- **Criterio de inclusión:** el directorio modela las reglas de negocio de un contexto delimitado (bounded context) específico, y es agnóstico respecto de qué proceso lo invoca o cómo se presenta su resultado.
+- **Criterio de exclusión:** si el directorio solo construye o despliega procesos, pertenece a `infra/`; si solo orquesta la ejecución de otros servicios sin reglas propias, pertenece a `execution/`.
+- **Estado actual:** `governance-compliance`, `repo-knowledge`, `agent-cognition`, `product-narrative`, `macro-apps`, `platform-integration`.
+
+### Nivel 4 — Núcleo compartido (`packages/`)
+
+- **Criterio de inclusión:** el directorio provee primitivas de propósito general, sin conocimiento de ningún contexto de negocio, consumibles por cualquier paquete de cualquier nivel superior.
+- **Criterio de exclusión:** si el directorio depende de cualquier otro paquete del monorepo, no pertenece a este nivel, sin excepción — la ausencia de dependencias internas es la condición que lo define.
+- **Estado actual:** `packages/kernel` (bus de trazabilidad de eventos).
+
+---
+
+## 3. Estructura de directorios
 
 ```
 .
-├── infra/                          # NIVEL 0 — Orquestación
-│   └── docker/                     #   Postgres vía Compose hoy; +k8s/ mañana
+├── infra/                          NIVEL 0 — Orquestación
+│   └── docker/                     Despliegue local de Postgres vía Docker Compose
 │       ├── compose.yaml
-│       ├── data/postgres/          #   (gitignored — el nombre = futuro nombre de PVC)
-│       └── README.md               #   documenta la disciplina a repetir por servicio
+│       ├── data/postgres/          Volumen de datos (excluido de control de versiones)
+│       └── README.md               Disciplina operativa del nivel de orquestación
 │
-├── apps/                           # NIVEL 1 — Aplicaciones desplegables
-│   ├── api/                        #   NestJS: GraphQL + JWT + RBAC + CASL + Zod + Drizzle/Postgres
-│   └── web/                        #   Next.js: REPO_OS (grafo real + chat sobre NATS)
+├── apps/                           NIVEL 1 — Aplicaciones
+│   ├── api/                        Backend NestJS: GraphQL, JWT, RBAC, CASL, Zod, Drizzle/Postgres
+│   └── web/                        Frontend Next.js: interfaz REPO_OS
 │
-├── execution/                      # NIVEL 2 — Orquestación de ejecución
-│   ├── graph-orchestration/        #   Enruta trabajo (Markov routing) + overlays HUD
-│   └── runtime-fabric/             #   Motor de simulación runtime (event-sourcing, etc.)
+├── execution/                      NIVEL 2 — Orquestación de ejecución
+│   ├── graph-orchestration/        Enrutamiento de trabajo, overlays de estado operacional
+│   └── runtime-fabric/             Motor de simulación de ejecución en runtime
 │
-├── services/                       # NIVEL 3 — Servicios de dominio (departamentos)
-│   ├── governance-compliance/      #   Policy runtime, constitutional runtime, security-compliance
-│   ├── repo-knowledge/             #   Lectura real de repo + knowledge graph
-│   ├── agent-cognition/            #   Comandos de agente + razonamiento
-│   ├── product-narrative/          #   Narrativa/demo/replay (alcance amplio — ver decisions-log)
-│   ├── macro-apps/                 #   Estado UI (store/selectors) del canvas
-│   └── platform-integration/       #   MCP fabric, integración externa (recién reubicado — ver decisions-log)
+├── services/                       NIVEL 3 — Servicios de dominio
+│   ├── governance-compliance/      Motor de políticas, gobernanza constitucional, cumplimiento de seguridad
+│   ├── repo-knowledge/             Lectura de repositorio y grafo de conocimiento
+│   ├── agent-cognition/            Comandos de agente y razonamiento cognitivo
+│   ├── product-narrative/          Narrativa de producto, demostraciones, reproducción de eventos
+│   ├── macro-apps/                 Estado de interfaz para el shell del lienzo (canvas)
+│   └── platform-integration/       Integración con plataformas externas y control MCP
 │
-└── packages/                       # NIVEL 4 — Kernel compartido
-    └── kernel/                     #   Trace bus + trace-stream
+└── packages/                       NIVEL 4 — Núcleo compartido
+    └── kernel/                     Bus de trazabilidad de eventos
 ```
 
 ---
 
-## 4. Tabla completa (para referencia rápida)
+## 4. Grafo de dependencias
 
-| # | Ruta | Nombre del paquete | Nivel | Responsabilidad en una línea | Depende de (dentro del repo) | Tamaño (líneas) |
+```
+                    NIVEL 0 — infra/
+                    (fuera del grafo de dependencias de código;
+                     construye y conecta artefactos compilados)
+                                │
+                                │ construye y ejecuta
+                                ▼
+        ┌───────────────────────────────────────────────────┐
+        │  NIVEL 1 — apps/                                    │
+        │  apps/api  (puerto 4000)    apps/web  (puerto 3000) │
+        └──────────────────┬──────────────────┬───────────────┘
+                           │                  │ depende de
+                           │                  ▼
+                           │   ┌─────────────────────────────────┐
+                           │   │  NIVEL 2 — execution/            │
+                           │   │  graph-orchestration              │
+                           │   │  runtime-fabric                   │
+                           │   └────────────────┬───────────────────┘
+                           │                    │ depende de
+                           │                    ▼
+                           │   ┌─────────────────────────────────────┐
+                           └──▶│  NIVEL 3 — services/                │
+                               │  governance-compliance · repo-knowledge│
+                               │  agent-cognition · product-narrative  │
+                               │  macro-apps · platform-integration    │
+                               └────────────────┬─────────────────────┘
+                                                │ depende de
+                                                ▼
+                               ┌─────────────────────────────────┐
+                               │  NIVEL 4 — packages/               │
+                               │  kernel                             │
+                               │  (no depende de ningún otro nivel) │
+                               └─────────────────────────────────┘
+```
+
+**Lectura del grafo:** toda flecha representa "depende de" y apunta exclusivamente en sentido descendente (de nivel numérico menor a mayor). No existe, ni debe existir, una flecha en sentido inverso. `apps/api` es una excepción visible en el estado actual: no declara dependencia de ningún paquete del monorepo (ver sección 6).
+
+---
+
+## 5. Inventario de paquetes
+
+| # | Ruta | Identificador de paquete | Nivel | Responsabilidad | Dependencias internas declaradas | Líneas de código |
 |---|---|---|---|---|---|---|
-| 1 | `infra/docker` | _(no es paquete de código)_ | 0 · Orquestación | Postgres vía Compose; futuro home de manifiestos k8s | — | — |
-| 2 | `apps/api` | `@tst-autonomous/api` | 1 · Apps | Backend NestJS: GraphQL, JWT, RBAC, CASL, Zod, Postgres/Drizzle | _(ninguno del monorepo todavía — ver §6)_ | 1084 |
-| 3 | `apps/web` | `web` | 1 · Apps | REPO_OS: grafo real del repo + chat sobre NATS JetStream | governance-compliance, graph-orchestration, macro-apps, product-narrative, repo-knowledge | 2812 |
-| 4 | `execution/graph-orchestration` | `@tst-autonomous/graph-orchestration` | 2 · Execution | Enruta trabajo (Markov routing), overlays HUD/loop-prevention | repo-knowledge, governance-compliance, kernel | 135 |
-| 5 | `execution/runtime-fabric` | `@tst-autonomous/runtime-fabric` | 2 · Execution | Motor de simulación runtime: event-sourcing, distributed-fabric, unified-runtime-kernel | _(ninguno)_ | 782 |
-| 6 | `services/governance-compliance` | `@tst-autonomous/governance-compliance` | 3 · Services | Gobernanza/compliance: policy-runtime, constitutional-runtime, security-compliance | kernel | 1245 |
-| 7 | `services/repo-knowledge` | `@tst-autonomous/repo-knowledge` | 3 · Services | Lectura real de repo, knowledge-graph, memoria | kernel, governance-compliance | 500 |
-| 8 | `services/agent-cognition` | `@tst-autonomous/agent-cognition` | 3 · Services | Comandos de agente, razonamiento cognitivo | kernel, governance-compliance, repo-knowledge, macro-apps | 378 |
-| 9 | `services/product-narrative` | `@tst-autonomous/product-narrative` | 3 · Services | Narrativa de producto/demo/replay | runtime-fabric | 813 |
-| 10 | `services/macro-apps` | `@tst-autonomous/macro-apps` | 3 · Services | Estado UI (store/selectors) para el shell del canvas | kernel, governance-compliance, repo-knowledge | 227 |
-| 11 | `services/platform-integration` | `@tst-autonomous/platform-integration` | 3 · Services | MCP fabric, integración externa, stack-definition | _(ninguno)_ | 739 |
-| 12 | `packages/kernel` | `@tst-autonomous/kernel` | 4 · Kernel | Trace bus + trace-stream | _(ninguno)_ | 502 |
+| 1 | `infra/docker` | (no es un paquete de código) | 0 | Orquestación de Postgres vía Docker Compose | — | — |
+| 2 | `apps/api` | `@tst-autonomous/api` | 1 | Backend NestJS: GraphQL, JWT, RBAC, CASL, Zod, Postgres/Drizzle | Ninguna (ver sección 6) | 1084 |
+| 3 | `apps/web` | `web` | 1 | Interfaz REPO_OS: grafo del repositorio y mensajería sobre NATS JetStream | governance-compliance, graph-orchestration, macro-apps, product-narrative, repo-knowledge | 2812 |
+| 4 | `execution/graph-orchestration` | `@tst-autonomous/graph-orchestration` | 2 | Enrutamiento de trabajo (Markov routing), overlays de estado operacional | repo-knowledge, governance-compliance, kernel | 135 |
+| 5 | `execution/runtime-fabric` | `@tst-autonomous/runtime-fabric` | 2 | Motor de simulación de ejecución en runtime | Ninguna | 782 |
+| 6 | `services/governance-compliance` | `@tst-autonomous/governance-compliance` | 3 | Motor de políticas, gobernanza constitucional, cumplimiento de seguridad | kernel | 1245 |
+| 7 | `services/repo-knowledge` | `@tst-autonomous/repo-knowledge` | 3 | Lectura de repositorio, grafo de conocimiento, memoria persistente | kernel, governance-compliance | 500 |
+| 8 | `services/agent-cognition` | `@tst-autonomous/agent-cognition` | 3 | Comandos de agente y razonamiento cognitivo | kernel, governance-compliance, repo-knowledge, macro-apps | 378 |
+| 9 | `services/product-narrative` | `@tst-autonomous/product-narrative` | 3 | Narrativa de producto, demostraciones, reproducción de eventos (alcance amplio — ver `decisions-log.md`) | runtime-fabric | 813 |
+| 10 | `services/macro-apps` | `@tst-autonomous/macro-apps` | 3 | Estado de interfaz para el shell del lienzo | kernel, governance-compliance, repo-knowledge | 227 |
+| 11 | `services/platform-integration` | `@tst-autonomous/platform-integration` | 3 | Integración con plataformas externas, control MCP, definición de stack canónico | Ninguna | 739 |
+| 12 | `packages/kernel` | `@tst-autonomous/kernel` | 4 | Bus de trazabilidad de eventos | Ninguna | 502 |
 
 ---
 
-## 5. ¿Y "governance-compliance"? ¿Y Kubernetes?
+## 6. Estado actual declarado (sin inferencias)
 
-Dos cosas que se piden seguido y conviene aclarar dónde están **hoy**, para no asumir de más:
+Las siguientes afirmaciones describen el estado verificado del código al momento de este documento. No deben interpretarse como planes ni como trabajo en curso salvo que se indique explícitamente.
 
-- **`services/governance-compliance` ya existe** y contiene policy-runtime, constitutional-runtime y security-compliance reales — pero **no está conectado a `apps/api`**. Hoy `apps/api` solo usa su propia capa CASL/RBAC (`apps/api/src/casl/`), que es un sistema aparte y más simple. Conectar `apps/api` a `governance-compliance` de verdad (un guard/interceptor que consulte `policy-runtime` en cada mutation) es un paso pendiente, no algo que este mapa ya asuma hecho.
-- **Kubernetes todavía no existe en el repo.** `infra/docker/` es Docker Compose puro. La disciplina de `infra/docker/README.md` (una carpeta de datos por servicio, nombrada igual que el servicio) está pensada explícitamente para que el día que se agregue `infra/k8s/`, cada `data/<servicio>/` se convierta en una `PersistentVolumeClaim` del mismo nombre — pero ese día todavía no llegó.
-
-## 6. Un hueco real que vale la pena mirar
-
-`apps/api` no depende hoy de **ningún** paquete del monorepo — ni de `packages/kernel`, ni de `services/governance-compliance`. Es una app NestJS aislada con su propia lógica (auth, CASL, Postgres). Esto no es un error, pero es la razón por la que "aplicar governance-compliance" a `apps/api` requiere trabajo real de integración, no solo un `import`.
+1. **`services/governance-compliance` no está conectado a `apps/api`.** `apps/api` implementa su propio mecanismo de autorización (CASL/RBAC, en `apps/api/src/casl/`), independiente del motor de políticas de `services/governance-compliance`. La integración entre ambos no existe en el código actual.
+2. **No existe infraestructura de Kubernetes en este repositorio.** `infra/docker/` es exclusivamente Docker Compose. La convención de nombrar cada volumen de datos igual que su servicio (documentada en `infra/docker/README.md`) fue diseñada para facilitar una futura migración a `PersistentVolumeClaim`, pero esa migración no ha comenzado.
+3. **`apps/api` no declara ninguna dependencia interna del monorepo** (ver fila 2 de la sección 5). Es la única excepción a la expectativa general de que las aplicaciones consuman servicios de dominio.
 
 ---
 
-## 7. Documentos relacionados en esta carpeta
+## 7. Documentos relacionados
 
-- **`decisions-log.md`** — qué se movió/renombró en esta pasada, por qué, y con qué evidencia (no son decisiones "porque sí").
-- **`glossary.md`** — los términos técnicos de este documento, explicados sin jerga, para quien no programa.
+- **`decisions-log.md`** — Registro de decisiones de reclasificación arquitectónica: qué cambió, con qué evidencia, y qué verificación se ejecutó.
+- **`glossary.md`** — Definiciones formales de la terminología empleada en este documento.
